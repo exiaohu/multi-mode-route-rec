@@ -100,4 +100,3 @@ wkt = proj.ExportToWkt()
 f = open(data_address.replace(".shp", ".prj"), 'w')
 f.write(wkt)
 f.close()
-

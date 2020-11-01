@@ -49,17 +49,19 @@ date_strs = ['20180801', '20180802', '20180803', '20180804', '20180805', '201808
 name_pattern = r'\d+_\d+.txt'
 column_names = ['gen_date', 'gen_time', 'city_id', 'vehicle_id', 'lng', 'lat',
                 'speed', 'angle', 'load_state', 'st_validate', 'recv_dt']
-column_used = ['gen_date', 'gen_time', 'vehicle_id', 'lng', 'lat', 'speed']
+column_used = ['gen_date', 'gen_time', 'vehicle_id', 'lng', 'lat', 'speed', 'load_state', 'angle']
 data_converters = {
     'vehicle_id': parse_to_int,
     'lng': parse_to_float,
     'lat': parse_to_float,
-    'speed': parse_to_float
+    'speed': parse_to_float,
+    'load_state': parse_to_float,
+    'angle': parse_to_float
 }
 
 crs_lookup = {'GCJ02': '', 'WGS84': 'EPSG:4326'}
 
-for date_str in date_strs[5:]:
+for date_str in date_strs:
     data = list()
     data_dir = os.path.join(bj_taxi_folder, date_str)
     print('data collecting...', data_dir)
@@ -94,10 +96,10 @@ for date_str in date_strs[5:]:
     data.sort_values('gen_dt', inplace=True)
 
 
-    def parse_vehicle(geometry, dt, speed):
+    def parse_vehicle(geometry, dt, speed, load_state, angle):
         res, cur = list(), list()
-        for p, t, s in zip(geometry, dt, speed):
-            item = {'p': mapping(p), 't': t.timestamp(), 's': s}
+        for p, t, s, ls, a in zip(geometry, dt, speed, load_state, angle):
+            item = {'p': mapping(p), 't': t.timestamp(), 's': s, 'ls': ls, 'a': a}
             if len(cur) == 0 or item['t'] - cur[-1]['t'] <= 100:
                 cur.append(item)
             else:
@@ -109,12 +111,13 @@ for date_str in date_strs[5:]:
 
     print('data parsing...', data_dir)
     data = data.groupby(['vehicle_id']).apply(
-        lambda vehicle: parse_vehicle(vehicle.geometry, vehicle.gen_dt, vehicle.speed)
+        lambda vehicle: parse_vehicle(vehicle.geometry, vehicle.gen_dt, vehicle.speed, vehicle.load_state,
+                                      vehicle.angle)
     )
     data = data.to_dict()
     # CHECKPOINT 1
     # json.dump(data, open(f'bj_traj_parsed-{date_str}.json', 'w'))
-    pickle.dump(data, open(f'bj_traj_parsed/bj_traj_parsed-{date_str}.pickle', 'wb+'))
+    pickle.dump(data, open(f'/home/huxiao/data/bj_data/bj_traj_parsed/bj_traj_parsed-{date_str}.pickle', 'wb+'))
     print('parsed trajectories saved as', f'bj_traj_parsed-{date_str}.pickle')
 
     data_list = [data[key] for key in sorted(data)]
@@ -123,5 +126,5 @@ for date_str in date_strs[5:]:
     gdata = gpd.GeoDataFrame({'geometry': gdata}, crs=crs_lookup['WGS84'])
     gdata.index.rename('id', inplace=True)
     # # CHECKPOINT 2
-    gdata.to_file(f'trajs/trajs-{date_str}.shp')
+    gdata.to_file(f'/home/huxiao/data/bj_data/trajs/trajs-{date_str}.shp')
     print('parsed trajectories saved as', f'trajs/trajs-{date_str}.shp')
