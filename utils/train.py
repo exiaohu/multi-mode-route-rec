@@ -53,6 +53,46 @@ class SimpleTrainer(object):
         set_device_recursive(self.optimizer.state, self.device)
 
 
+class BJTrainer(object):
+    def __init__(self,
+                 model: nn.Module,
+                 loss: nn.Module,
+                 device: torch.device,
+                 optimizer,
+                 max_grad_norm: Optional[float]):
+        self.model = model.to(device)
+        self.loss = loss.to(device)
+        self.optimizer = optimizer
+        self.clip = max_grad_norm
+        self.device = device
+
+    def train(self, inputs, targets):
+        self.model.train()
+        self.optimizer.zero_grad()
+
+        attr, states, net = inputs
+        predicts = self.model(attr.to(self.device), states.to(self.device), net.to(self.device), targets.to(self.device))
+
+        loss = self.loss(predicts, targets.to(self.device))
+        loss.backward()
+        if self.clip is not None:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+        self.optimizer.step()
+        return predicts
+
+    def predict(self, inputs):
+        self.model.eval()
+
+        attr, states, net = inputs
+        return self.model(attr.to(self.device), states.to(self.device), net.to(self.device))
+
+    def load_state_dict(self, model_state_dict, optimizer_state_dict):
+        self.model.load_state_dict(model_state_dict)
+        self.optimizer.load_state_dict(optimizer_state_dict)
+        self.model = self.model.to(self.device)
+        set_device_recursive(self.optimizer.state, self.device)
+
+
 def train_model(
         data_loaders,
         folder: str,
@@ -93,7 +133,7 @@ def train_model(
             for phase in phases:
 
                 steps, predicts, targets = 0, list(), list()
-                for x, y, _ in tqdm(data_loaders[phase], f'{phase.capitalize():5} {epoch}'):
+                for x, y in tqdm(data_loaders[phase], f'{phase.capitalize():5} {epoch}'):
                     targets.append(y.numpy().copy())
                     if phase == 'train':
                         y_ = trainer.train(x, y)
@@ -155,24 +195,18 @@ def test_model(
     trainer.model.load_state_dict(saved_dict['model_state_dict'])
 
     predictions, running_targets = list(), list()
-    total_lengths = list()
     with torch.no_grad():
-        for inputs, targets, lengths in tqdm(dataloader, 'Test model'):
+        for inputs, targets in tqdm(dataloader, 'Test model'):
             running_targets.append(targets.numpy().copy())
-            total_lengths.append(lengths.numpy().copy())
             predicts = trainer.predict(inputs)
             predictions.append(predicts.cpu().numpy())
 
     # 性能
     predictions, running_targets = np.concatenate(predictions), np.concatenate(running_targets)
-    total_lengths = np.concatenate(total_lengths)
     scores = evaluate(predictions, running_targets)
-    scroes2 = evaluate(total_lengths / predictions, total_lengths / running_targets)
     scores.pop('loss')
-    scroes2.pop('loss')
     print('test results:')
     print(json.dumps(scores, cls=JsonEncoder, indent=4))
-    print(json.dumps(scroes2, cls=JsonEncoder, indent=4))
     with open(os.path.join(folder, 'test-scores.json'), 'w+') as f:
         json.dump(scores, f, cls=JsonEncoder, indent=4)
 

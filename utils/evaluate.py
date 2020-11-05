@@ -4,15 +4,19 @@ import numpy as np
 def evaluate(predictions: np.ndarray, targets: np.ndarray):
     """
     evaluate model performance
-    :param predictions: [n_samples, 12, n_nodes, n_features]
-    :param targets: np.ndarray, shape [n_samples, 12, n_nodes, n_features]
+    :param predictions: [n_nodes, 12, n_features]
+    :param targets: np.ndarray, shape [n_nodes, 12, n_features]
     :return: a dict [str -> float]
     """
     return {
-        'mae': mae_np(predictions, targets),
-        'rmse': rmse_np(predictions, targets),
-        'mape': mape_np(predictions, targets),
-        'loss': masked_mae_np(predictions, targets, null_val=0.0)
+        'speed_mae': masked_mae_np(predictions[..., 0], targets[..., 0], null_val=0.0),
+        'speed_rmse': masked_rmse_np(predictions[..., 0], targets[..., 0], null_val=0.0),
+        'speed_mape': masked_mape_np(predictions[..., 0], targets[..., 0], null_val=0.0),
+        'available_mae': masked_mae_np(predictions[..., 1], targets[..., 1], null_val=0.0),
+        'available_rmse': masked_rmse_np(predictions[..., 1], targets[..., 1], null_val=0.0),
+        'available_mape': masked_mape_np(predictions[..., 1], targets[..., 1], null_val=0.0),
+        'loss': masked_mae_np(predictions[..., 1], targets[..., 1], null_val=0.0) +
+                masked_mae_np(predictions[..., 0], targets[..., 0], null_val=0.0)
     }
 
 
