@@ -105,6 +105,8 @@ class BJSpeedDataset(Dataset):
         fro, to = zip(*net.edges())
         fro = list(map(lambda node: nodes.index(node), fro))
         to = list(map(lambda node: nodes.index(node), to))
+        ids = list(range(len(nodes)))
+        fro, to = zip(*sorted(set(zip(fro + ids, to + ids))))
         return dgl.graph((fro, to), num_nodes=len(nodes))
 
     @property
@@ -122,7 +124,7 @@ class BJSpeedDataset(Dataset):
     @staticmethod
     @timing
     def init_road_states(road_states_path='/home/huxiao/data/bj_data/roads-20180801-20180831.parquet'):
-        roads = pd.read_parquet(road_states_path)
+        roads = pd.read_parquet(road_states_path, )
         return {
             'speed': roads.speed.unstack('timestamps'),
             'available': roads.available.unstack('timestamps'),

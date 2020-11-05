@@ -9,12 +9,12 @@ def evaluate(predictions: np.ndarray, targets: np.ndarray):
     :return: a dict [str -> float]
     """
     return {
-        'speed_mae': masked_mae_np(predictions[..., 0], targets[..., 0], null_val=0.0),
-        'speed_rmse': masked_rmse_np(predictions[..., 0], targets[..., 0], null_val=0.0),
-        'speed_mape': masked_mape_np(predictions[..., 0], targets[..., 0], null_val=0.0),
-        'available_mae': masked_mae_np(predictions[..., 1], targets[..., 1], null_val=0.0),
-        'available_rmse': masked_rmse_np(predictions[..., 1], targets[..., 1], null_val=0.0),
-        'available_mape': masked_mape_np(predictions[..., 1], targets[..., 1], null_val=0.0),
+        'speed/mae': masked_mae_np(predictions[..., 0], targets[..., 0], null_val=0.0),
+        'speed/rmse': masked_rmse_np(predictions[..., 0], targets[..., 0], null_val=0.0),
+        'speed/mape': masked_mape_np(predictions[..., 0], targets[..., 0], null_val=0.0),
+        'available/mae': masked_mae_np(predictions[..., 1], targets[..., 1], null_val=0.0),
+        'available/rmse': masked_rmse_np(predictions[..., 1], targets[..., 1], null_val=0.0),
+        'available/mape': masked_mape_np(predictions[..., 1], targets[..., 1], null_val=0.0),
         'loss': masked_mae_np(predictions[..., 1], targets[..., 1], null_val=0.0) +
                 masked_mae_np(predictions[..., 0], targets[..., 0], null_val=0.0)
     }

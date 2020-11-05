@@ -16,82 +16,6 @@ from tqdm import tqdm
 from .evaluate import evaluate
 
 
-class SimpleTrainer(object):
-    def __init__(self,
-                 model: nn.Module,
-                 loss: nn.Module,
-                 device: torch.device,
-                 optimizer,
-                 max_grad_norm: Optional[float]):
-        self.model = model.to(device)
-        self.loss = loss.to(device)
-        self.optimizer = optimizer
-        self.clip = max_grad_norm
-        self.device = device
-
-    def train(self, inputs, targets):
-        self.model.train()
-        self.optimizer.zero_grad()
-
-        predicts = self.model(inputs.to(self.device))
-
-        loss = self.loss(predicts, targets.to(self.device))
-        loss.backward()
-        if self.clip is not None:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-        self.optimizer.step()
-        return predicts
-
-    def predict(self, inputs):
-        self.model.eval()
-        return self.model(inputs.to(self.device))
-
-    def load_state_dict(self, model_state_dict, optimizer_state_dict):
-        self.model.load_state_dict(model_state_dict)
-        self.optimizer.load_state_dict(optimizer_state_dict)
-        self.model = self.model.to(self.device)
-        set_device_recursive(self.optimizer.state, self.device)
-
-
-class BJTrainer(object):
-    def __init__(self,
-                 model: nn.Module,
-                 loss: nn.Module,
-                 device: torch.device,
-                 optimizer,
-                 max_grad_norm: Optional[float]):
-        self.model = model.to(device)
-        self.loss = loss.to(device)
-        self.optimizer = optimizer
-        self.clip = max_grad_norm
-        self.device = device
-
-    def train(self, inputs, targets):
-        self.model.train()
-        self.optimizer.zero_grad()
-
-        attr, states, net = inputs
-        predicts = self.model(attr.to(self.device), states.to(self.device), net.to(self.device), targets.to(self.device))
-
-        loss = self.loss(predicts, targets.to(self.device))
-        loss.backward()
-        if self.clip is not None:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-        self.optimizer.step()
-        return predicts
-
-    def predict(self, inputs):
-        self.model.eval()
-
-        attr, states, net = inputs
-        return self.model(attr.to(self.device), states.to(self.device), net.to(self.device))
-
-    def load_state_dict(self, model_state_dict, optimizer_state_dict):
-        self.model.load_state_dict(model_state_dict)
-        self.optimizer.load_state_dict(optimizer_state_dict)
-        self.model = self.model.to(self.device)
-        set_device_recursive(self.optimizer.state, self.device)
-
 
 def train_model(
         data_loaders,
@@ -102,8 +26,8 @@ def train_model(
         scheduler=None,
         use_checkpoint=False,
 ):
+    folder = os.path.join('run', folder)
     save_path = os.path.join(folder, 'best_model.pkl')
-
     if use_checkpoint and os.path.exists(save_path):
         save_dict = torch.load(save_path)
 
@@ -112,7 +36,7 @@ def train_model(
         best_val_loss = save_dict['best_val_loss']
         begin_epoch = save_dict['epoch'] + 1
     else:
-        shutil.rmtree(folder)
+        shutil.rmtree(folder, ignore_errors=True)
         save_dict = dict()
         best_val_loss = float('inf')
         begin_epoch = 0
@@ -189,7 +113,8 @@ def test_model(
         dataloader,
         trainer,
         folder: str):
-    saved_path = os.path.join(folder, 'best_model.pkl')
+    folder = os.path.join('run', folder)
+    saved_path = os.path.join('run', folder, 'best_model.pkl')
 
     saved_dict = torch.load(saved_path)
     trainer.model.load_state_dict(saved_dict['model_state_dict'])

@@ -6,12 +6,12 @@ from torch import nn, Tensor
 
 class FCLSTM(nn.Module):
     def __init__(self,
-                 n_hist: int,
-                 n_pred: int,
-                 hidden_size: int,
-                 n_rnn_layers: int,
-                 input_dim: int,
-                 output_dim: int):
+                 n_hist: int = 12,
+                 n_pred: int = 12,
+                 hidden_size: int = 64,
+                 n_rnn_layers: int = 2,
+                 input_dim: int = 3,
+                 output_dim: int = 2):
         super(FCLSTM, self).__init__()
         self.n_hist = n_hist
         self.n_pred = n_pred

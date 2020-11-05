@@ -1,27 +1,30 @@
 from typing import Dict
 
 import torch
-from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 
 
 class ZScoreScaler:
-    def __init__(self, mean: float, std: float):
-        assert std > 0
+    def __init__(
+            self,
+            mean=torch.tensor([32.61261681, 0.55228212, 1.74994048], dtype=torch.float32),
+            std=torch.tensor([16.81696799, 0.7368644, 1.62378311], dtype=torch.float32)):
         self.mean = mean
         self.std = std
 
-    def transform(self, x: Tensor, nan_val: float):
-        zeros = torch.eq(x, nan_val)
-        x = (x - self.mean) / self.std
-        x[zeros] = 0.0
-        return x
+    def transform(self, x: torch.Tensor, nan_val):
+        dv = x.device
 
-    def inverse_transform(self, x: Tensor, nan_val: float):
-        zeros = torch.eq(x, nan_val)
-        x = x * self.std + self.mean
-        x[zeros] = 0.0
-        return x
+        mean, std = self.mean[:x.shape[-1]].to(dv), self.std[:x.shape[-1]].to(dv)
+
+        return torch.where(torch.eq(x, nan_val), torch.tensor(0., device=dv), (x - mean) / std)
+
+    def inverse_transform(self, x: torch.Tensor, nan_val):
+        dv = x.device
+
+        mean, std = self.mean[:x.shape[-1]].to(dv), self.std[:x.shape[-1]].to(dv)
+
+        return torch.where(torch.eq(x, nan_val), torch.tensor(0., device=dv), x * std + mean)
 
 
 def get_dataloaders(datasets: Dict[str, Dataset],
