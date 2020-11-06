@@ -48,30 +48,34 @@ class BJSpeedDataset(Dataset):
             cls.n_pred = n_pred
             cls.ratio = ratio
 
-            road_states = cls.init_road_states(road_states_path)
-            road_attributes = cls.init_road_attributes(road_net_path)
-            road_net = cls.init_road_net(road_net_path)
-
-            valid_segments = set(road_states['speed'].index)
-            road_attributes = road_attributes.loc[valid_segments]
-            road_net = road_net.subgraph(valid_segments)
+            road_states, id_to_rs, rs_to_id, id_to_ts, ts_to_id = cls.init_road_states(road_states_path)
+            road_attributes = cls.init_road_attributes(road_net_path, list(rs_to_id))
+            road_net = cls.init_road_net(road_net_path, rs_to_id)
 
             partitions = graph_partition(road_net, n_partitions or int(len(road_net.nodes) ** 0.5))
-
-            time_series = road_states['speed'].columns.to_series()
-            time_interval = min(j - i for i, j in zip(time_series.index[:-1], time_series.index[1:]))
-            sequence = list()
-            for ti in time_series.index:
-                seq = list(time_series[time_series.between(ti, ti + time_interval * (n_hist + n_pred - 1))])
-                if len(seq) == (n_hist + n_pred):
-                    sequence.append(seq)
+            sequence = cls.get_valid_sequence(ts_to_id, n_hist, n_pred)
 
             cls._states = road_states
+            cls._id_to_rs = id_to_rs
+            cls._rs_to_id = rs_to_id
+            cls._id_to_ts = id_to_ts
+            cls._ts_to_id = ts_to_id
             cls._attributes = road_attributes
             cls._net: nx.DiGraph = road_net
             cls._partitions = partitions
             cls._sequence = sequence
             cls.class_inited = True
+
+    @staticmethod
+    def get_valid_sequence(ts_to_id, n_hist, n_pred):
+        time_series = pd.Series(ts_to_id)
+        time_interval = min(j - i for i, j in zip(time_series.index[:-1], time_series.index[1:]))
+        sequence = list()
+        for ti in time_series.index:
+            seq = time_series[ti: ti + time_interval * (n_hist + n_pred - 1)]
+            if len(seq) == (n_hist + n_pred):
+                sequence.append(list(seq))
+        return sequence
 
     def __getitem__(self, idx):
         """
@@ -86,12 +90,9 @@ class BJSpeedDataset(Dataset):
 
         nodes, seq = sorted(self._partitions[part_id]), self.sequence[seq_id]
 
-        attr = torch.tensor(np.nan_to_num(self._attributes.loc[nodes].to_numpy()), dtype=torch.float32)
+        attr = torch.tensor(self._attributes[nodes], dtype=torch.float32)
 
-        speed = self._states['speed'].loc[nodes, seq].to_numpy()
-        available = self._states['available'].loc[nodes, seq].to_numpy()
-        total = self._states['total'].loc[nodes, seq].to_numpy()
-        states = torch.tensor(np.nan_to_num(np.stack([speed, available, total], axis=-1)), dtype=torch.float32)
+        states = torch.tensor(self._states[nodes, :][:, seq], dtype=torch.float32)
 
         net = self.create_dgl_graph_from_networkx(self._net.subgraph(nodes), nodes)
 
@@ -103,10 +104,10 @@ class BJSpeedDataset(Dataset):
     @staticmethod
     def create_dgl_graph_from_networkx(net: nx.DiGraph, nodes: List[int]):
         fro, to = zip(*net.edges())
-        fro = list(map(lambda node: nodes.index(node), fro))
-        to = list(map(lambda node: nodes.index(node), to))
+        nodes = {node: i for i, node in enumerate(nodes)}
         ids = list(range(len(nodes)))
-        fro, to = zip(*sorted(set(zip(fro + ids, to + ids))))
+        fro = torch.tensor(list(map(lambda node: nodes[node], fro)) + ids)
+        to = torch.tensor(list(map(lambda node: nodes[node], to)) + ids)
         return dgl.graph((fro, to), num_nodes=len(nodes))
 
     @property
@@ -123,50 +124,62 @@ class BJSpeedDataset(Dataset):
 
     @staticmethod
     @timing
-    def init_road_states(road_states_path='/home/huxiao/data/bj_data/roads-20180801-20180831.parquet'):
-        roads = pd.read_parquet(road_states_path, )
-        return {
-            'speed': roads.speed.unstack('timestamps'),
-            'available': roads.available.unstack('timestamps'),
-            'total': roads.total.unstack('timestamps'),
-        }
+    def init_road_states(road_states_path):
+        roads = pd.read_parquet(road_states_path)
+
+        _, n_feat = roads.shape
+        timestamps, segments = roads.index.levels
+
+        roads = roads.unstack('timestamps')
+        states = np.reshape(roads.to_numpy(dtype=np.float32), (len(segments), n_feat, len(timestamps)))
+
+        id_to_rs, rs_to_id = {i: rs for i, rs in enumerate(segments)}, {rs: i for i, rs in enumerate(segments)}
+        id_to_ts, ts_to_id = {i: ts for i, ts in enumerate(timestamps)}, {ts: i for i, ts in enumerate(timestamps)}
+
+        return np.nan_to_num(states.transpose((0, 2, 1))), id_to_rs, rs_to_id, id_to_ts, ts_to_id
 
     @staticmethod
     @timing
-    def init_road_attributes(road_net_path='/home/huxiao/data/bj_data/bj_roads/bj_roads.shp'):
+    def init_road_attributes(road_net_path, valid_road_segments):
         columns_used = ['id', 'kind', 'width', 'direction', 'toll', 'length', 'speedclass', 'lanenum']
-        road_net = gpd.read_file(road_net_path)[columns_used]
+        roads = gpd.read_file(road_net_path)[columns_used]
 
-        main_road = road_net.kind.apply(lambda kind: any(map(lambda k: 1 <= int(k[:2], base=16) <= 6, kind.split('|'))))
-        road_net = road_net[main_road]
+        roads['id'] = pd.to_numeric(roads.id)
+        roads = roads.set_index('id').loc[valid_road_segments]
 
-        road_net['id'] = pd.to_numeric(road_net.id)
-        road_net = road_net.set_index('id')
+        main_road = roads.kind.apply(lambda kind: any(map(lambda k: 1 <= int(k[:2], base=16) <= 6, kind.split('|'))))
+        roads = roads[main_road]
 
-        road_net['width'] = pd.to_numeric(road_net.width)
-        road_net['direction'] = pd.to_numeric(road_net.direction)
-        road_net['toll'] = pd.to_numeric(road_net.toll)
-        road_net['length'] = pd.to_numeric(road_net.length)
-        road_net['speedclass'] = pd.to_numeric(road_net.speedclass)
-        road_net['lanenum'] = pd.to_numeric(road_net.lanenum)
+        roads['width'] = pd.to_numeric(roads.width)
+        roads['direction'] = pd.to_numeric(roads.direction)
+        roads['toll'] = pd.to_numeric(roads.toll)
+        roads['length'] = pd.to_numeric(roads.length)
+        roads['speedclass'] = pd.to_numeric(roads.speedclass)
+        roads['lanenum'] = pd.to_numeric(roads.lanenum)
 
-        road_net = pd.merge(road_net, road_net.kind.str.get_dummies(sep='|'), left_index=True, right_index=True)
-        road_net = road_net.drop(columns='kind')
+        roads = pd.merge(roads, roads.kind.str.get_dummies(sep='|'), left_index=True, right_index=True)
+        roads = roads.drop(columns='kind')
 
-        return road_net
+        return roads.to_numpy()
 
     @staticmethod
     @timing
-    def init_road_net(road_net_path='/home/huxiao/data/bj_data/bj_roads/bj_roads.shp'):
+    def init_road_net(road_net_path, rs_to_id):
         used_columns = ['id', 'snodeid', 'enodeid', 'kind']
         roads = gpd.read_file(road_net_path)[used_columns]
+
+        roads['id'] = pd.to_numeric(roads.id)
+        roads = roads.set_index('id').loc[list(rs_to_id)]
+
         roads = roads[roads.kind.apply(lambda kind: any(map(lambda k: 1 <= int(k[:2], base=16) <= 6, kind.split('|'))))]
+
         road_segments, road_interactions = set(), set()
         prevs, nexts = collections.defaultdict(set), collections.defaultdict(set)
+
         road_net = nx.DiGraph()
 
-        for _, road in roads.iterrows():
-            nid, sid, eid = int(road.id), int(road.snodeid), int(road.enodeid)
+        for nid, road in roads.iterrows():
+            sid, eid = int(road.snodeid), int(road.enodeid)
             prevs[eid].add(nid)
             nexts[sid].add(nid)
             road_interactions.add(sid)
@@ -177,7 +190,7 @@ class BJSpeedDataset(Dataset):
         for ri in road_interactions:
             road_net.add_edges_from(itertools.product(prevs[ri], nexts[ri]))
 
-        return road_net
+        return nx.relabel_nodes(road_net.subgraph(rs_to_id.keys()), rs_to_id)
 
 
 def bj_collate_fn(batch):

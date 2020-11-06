@@ -1,5 +1,5 @@
-import networkx as nx
 import numpy as np
+import networkx as nx
 import pymetis
 
 from .helper import timing
@@ -7,9 +7,8 @@ from .helper import timing
 
 @timing
 def graph_partition(g: nx.DiGraph, n_part: int):
-    nodes, adj_list = zip(*[(node, list(edges)) for node, edges in g.adjacency()])
-
-    adj_list = list(map(lambda edges: np.array(list(map(lambda edge: nodes.index(edge), edges))), adj_list))
+    edges = ((node, np.array(list(edges))) for node, edges in g.to_undirected().adjacency())
+    nodes, adj_list = zip(*sorted(edges, key=lambda i: i[0]))
 
     _, membership = pymetis.part_graph(n_part, adj_list)
 
