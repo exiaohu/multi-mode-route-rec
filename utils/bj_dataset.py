@@ -31,40 +31,82 @@ class BJSpeedDataset(Dataset):
     @classmethod
     def init_class(
             cls,
-            road_states_path: str = '/home/huxiao/data/bj_data/roads-20180801-20180831.parquet',
-            road_net_path: str = '/home/huxiao/data/bj_data/bj_roads/bj_roads.shp',
+            road_states_path: str = 'data/roads-20180801-20180831.parquet',
+            road_net_path: str = 'data/roads/bj_roads.shp',
             ratio: Tuple[Number, Number, Number] = (6, 2, 2),
             n_hist: int = 12,
             n_pred: int = 12,
-            in_dim: int = 3,
-            out_dim: int = 2,
-            n_partitions: int = None
+            in_dims: List[str] = ('speed', 'available', 'total'),
+            out_dims: List[str] = ('speed', 'available'),
+            n_partitions: int = None,
+            high_level: bool = True
     ):
         if not cls.class_inited:
-            cls.in_dim = in_dim
-            cls.out_dim = out_dim
+            cls.in_dims = in_dims
+            cls.out_dims = out_dims
 
             cls.n_hist = n_hist
             cls.n_pred = n_pred
             cls.ratio = ratio
 
-            road_states, id_to_rs, rs_to_id, id_to_ts, ts_to_id = cls.init_road_states(road_states_path)
+            cls.high_level = high_level
+
+            road_states, id_to_rs, rs_to_id, id_to_ts, ts_to_id, name_lookup = cls.init_road_states(road_states_path)
             road_attributes = cls.init_road_attributes(road_net_path, list(rs_to_id))
             road_net = cls.init_road_net(road_net_path, rs_to_id)
 
-            partitions = graph_partition(road_net, n_partitions or int(len(road_net.nodes) ** 0.5))
+            partitions, mapping = graph_partition(road_net, n_partitions or int(len(road_net.nodes) ** 0.5))
             sequence = cls.get_valid_sequence(ts_to_id, n_hist, n_pred)
 
-            cls._states = road_states
+            if high_level:
+                road_net = nx.relabel_nodes(road_net, mapping)
+                road_states = np.nan_to_num(cls.mapping_groups(road_states, partitions))
+                road_attributes = cls.mapping_groups(road_attributes, partitions)
+                cls._partitions = [list(range(len(partitions)))]
+            else:
+                cls._partitions = partitions
+
+            cls._sequence = sequence
+
+            ha = cls.get_ha(road_states, id_to_ts, *cls.start_end('train'))
+            road_states = np.concatenate([road_states, ha], axis=-1)
+            name_lookup.update({i + '_ha': v + len(name_lookup) for i, v in name_lookup.items()})
+
+            assert all(dim in name_lookup for dim in in_dims + out_dims), \
+                f'input and output dims {in_dims}/{out_dims} must inside {list(name_lookup.keys())}'
+
+            cls._net: nx.DiGraph = road_net
+            cls._states = np.nan_to_num(road_states)
+            cls._attributes = road_attributes
             cls._id_to_rs = id_to_rs
             cls._rs_to_id = rs_to_id
             cls._id_to_ts = id_to_ts
             cls._ts_to_id = ts_to_id
-            cls._attributes = road_attributes
-            cls._net: nx.DiGraph = road_net
-            cls._partitions = partitions
-            cls._sequence = sequence
+            cls._name_lookup = name_lookup
             cls.class_inited = True
+
+    @staticmethod
+    @timing
+    def get_ha(road_states, id_to_ts, start, end):
+        road_states[road_states == 0.] = np.nan
+
+        data = list(road_states.transpose((1, 0, 2)))
+
+        hours_preds = {i: list() for i in range(24)}
+        for i in range(start, end):
+            hours_preds[id_to_ts[i].hour].append(data[i])
+
+        hours_preds = {i: np.nanmean(np.stack(v, axis=0), axis=0) for i, v in hours_preds.items()}
+        return np.stack((np.nan_to_num(hours_preds[id_to_ts[i].hour]) for i in range(len(data))), axis=1)
+
+    @staticmethod
+    def mapping_groups(roads, partitions):
+        groups = []
+
+        for part in partitions:
+            groups.append(np.nanmean(roads[part], axis=0))
+
+        return np.stack(groups, axis=0)
 
     @staticmethod
     def get_valid_sequence(ts_to_id, n_hist, n_pred):
@@ -96,7 +138,12 @@ class BJSpeedDataset(Dataset):
 
         net = self.create_dgl_graph_from_networkx(self._net.subgraph(nodes), nodes)
 
-        return attr, states[:, :self.n_hist, :self.in_dim], states[:, self.n_hist:, :self.out_dim], net
+        return (
+            attr,
+            states[:, :self.n_hist, [self._name_lookup[dim] for dim in self.in_dims]],
+            states[:, self.n_hist:, [self._name_lookup[dim] for dim in self.out_dims]],
+            net
+        )
 
     def __len__(self):
         return len(self._partitions) * len(self.sequence)
@@ -110,22 +157,29 @@ class BJSpeedDataset(Dataset):
         to = torch.tensor(list(map(lambda node: nodes[node], to)) + ids)
         return dgl.graph((fro, to), num_nodes=len(nodes))
 
+    @classmethod
+    def start_end(cls, phase):
+        trn, val, tst = cls.ratio
+        _sum = sum(cls.ratio)
+        if phase == 'train':
+            start, end = 0, int(trn / _sum * len(cls._sequence))
+        elif phase == 'val':
+            start, end = int(trn / _sum * len(cls._sequence)), int((trn + val) / _sum * len(cls._sequence))
+        else:  # phase == 'test'
+            start, end = int((trn + val) / _sum * len(cls._sequence)), len(cls._sequence)
+        return start, end
+
     @property
     def sequence(self):
-        trn, val, tst = self.ratio
-        _sum = sum(self.ratio)
-        if self.phase == 'train':
-            start, end = 0, int(trn / _sum * len(self._sequence))
-        elif self.phase == 'val':
-            start, end = int(trn / _sum * len(self._sequence)), int((trn + val) / _sum * len(self._sequence))
-        else:  # self.phase == 'test'
-            start, end = int((trn + val) / _sum * len(self._sequence)), len(self._sequence)
+        start, end = self.start_end(self.phase)
         return self._sequence[start:end]
 
     @staticmethod
     @timing
     def init_road_states(road_states_path):
         roads = pd.read_parquet(road_states_path)
+
+        name_lookup = {n: i for i, n in enumerate(roads.columns)}
 
         _, n_feat = roads.shape
         timestamps, segments = roads.index.levels
@@ -136,7 +190,7 @@ class BJSpeedDataset(Dataset):
         id_to_rs, rs_to_id = {i: rs for i, rs in enumerate(segments)}, {rs: i for i, rs in enumerate(segments)}
         id_to_ts, ts_to_id = {i: ts for i, ts in enumerate(timestamps)}, {ts: i for i, ts in enumerate(timestamps)}
 
-        return np.nan_to_num(states.transpose((0, 2, 1))), id_to_rs, rs_to_id, id_to_ts, ts_to_id
+        return states.transpose((0, 2, 1)), id_to_rs, rs_to_id, id_to_ts, ts_to_id, name_lookup
 
     @staticmethod
     @timing

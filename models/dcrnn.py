@@ -62,7 +62,7 @@ class DCRNNDecoder(nn.ModuleList):
         self.out = nn.Linear(hidden_size, output_size)
 
     def forward(self, nets: dgl.DGLGraph, states: Tensor,
-                targets: Tensor = None, teacher_force: bool = 0.5) -> Tensor:
+                targets: Tensor = None, teacher_force=0.5) -> Tensor:
         """
         :param nets: batched dgl graph, with `N` nodes
         :param states: tensor, [n_layers, N, hidden_size]
@@ -96,14 +96,13 @@ class DCRNN(nn.Module):
                  n_rnn_layers: int = 2,
                  input_dim: int = 3,
                  output_dim: int = 2,
-                 cl_decay_steps: int = 1000):
+                 cl_decay_steps: int = 10000):
         super(DCRNN, self).__init__()
         self.cl_decay_steps = cl_decay_steps
         self.encoder = DCRNNEncoder(input_dim, hidden_size, n_rnn_layers)
         self.decoder = DCRNNDecoder(output_dim, hidden_size, n_rnn_layers, n_pred)
 
-    def forward(self, inputs: Tensor, nets: dgl.DGLGraph, targets: Tensor = None,
-                batch_seen: int = None) -> Tensor:
+    def forward(self, inputs: Tensor, nets: dgl.DGLGraph, batch_seen: int, targets: Tensor = None) -> Tensor:
         """
         dynamic convolutional recurrent neural network
         :param inputs: [N, n_hist, input_dim]

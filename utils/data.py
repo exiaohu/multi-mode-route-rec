@@ -1,30 +1,47 @@
 from typing import Dict
 
+import numpy as np
+import pandas as pd
 import torch
+from functools import wraps
 from torch.utils.data import Dataset, DataLoader
 
 
+def scalar_method_wrapper(method):
+    @wraps(method)
+    def _impl(self, x, nan_val):
+        res_type, context = 'tensor', None
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x, dtype=torch.float32)
+            res_type = 'ndarray'
+
+        if isinstance(self.mean, torch.Tensor) and isinstance(self.std, torch.Tensor):
+            mean, std = self.mean[:x.shape[-1]].to(x.device), self.std[:x.shape[-1]].to(x.device)
+        else:
+            mean, std = self.mean, self.std
+
+        res = method(self, x, nan_val, mean, std)
+
+        if res_type == 'ndarray':
+            return res.cpu().numpy()
+        else:
+            return res
+
+    return _impl
+
+
 class ZScoreScaler:
-    def __init__(
-            self,
-            mean=torch.tensor([32.61261681, 0.55228212, 1.74994048], dtype=torch.float32),
-            std=torch.tensor([16.81696799, 0.7368644, 1.62378311], dtype=torch.float32)):
+    def __init__(self, mean, std):
         self.mean = mean
         self.std = std
 
-    def transform(self, x: torch.Tensor, nan_val):
-        dv = x.device
+    @scalar_method_wrapper
+    def transform(self, x: torch.Tensor, nan_val, mean, std):
+        return torch.where(torch.eq(x, nan_val), torch.tensor(0., device=x.device), (x - mean) / std)
 
-        mean, std = self.mean[:x.shape[-1]].to(dv), self.std[:x.shape[-1]].to(dv)
-
-        return torch.where(torch.eq(x, nan_val), torch.tensor(0., device=dv), (x - mean) / std)
-
-    def inverse_transform(self, x: torch.Tensor, nan_val):
-        dv = x.device
-
-        mean, std = self.mean[:x.shape[-1]].to(dv), self.std[:x.shape[-1]].to(dv)
-
-        return torch.where(torch.eq(x, nan_val), torch.tensor(0., device=dv), x * std + mean)
+    @scalar_method_wrapper
+    def inverse_transform(self, x: torch.Tensor, nan_val, mean, std):
+        return torch.where(torch.eq(x, nan_val), torch.tensor(0., device=x.device), x * std + mean)
 
 
 def get_dataloaders(datasets: Dict[str, Dataset],

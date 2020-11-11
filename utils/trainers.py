@@ -6,20 +6,23 @@ from typing import Optional
 from .data import ZScoreScaler
 from .train import set_device_recursive
 
+__all__ = ['BJTrainer', 'BJDCRNNTrainer', 'BJSTGCNTrainer']
+
 
 def train_wrapper(method):
     @wraps(method)
     def _impl(self, inputs, targets):
         attr, states, net = inputs
 
-        if self.scalar:
-            states = self.scalar.transform(states.to(self.device), 0)
-            targets = self.scalar.transform(targets.to(self.device), 0)
+        if self.in_scalar:
+            states = self.in_scalar.transform(states.to(self.device), 0)
+        if self.out_scalar:
+            targets = self.out_scalar.transform(targets.to(self.device), 0)
 
         predicts = method(self, (attr, states, net), targets)
 
-        if self.scalar:
-            return self.scalar.inverse_transform(predicts, 0)
+        if self.out_scalar:
+            return self.out_scalar.inverse_transform(predicts, 0)
         else:
             return predicts
 
@@ -30,13 +33,13 @@ def predict_wrapper(method):
     @wraps(method)
     def _impl(self, inputs):
         attr, states, net = inputs
-        if self.scalar:
-            states = self.scalar.transform(states.to(self.device), 0)
+        if self.in_scalar:
+            states = self.in_scalar.transform(states.to(self.device), 0)
 
         predicts = method(self, (attr, states, net))
 
-        if self.scalar:
-            return self.scalar.inverse_transform(predicts, 0)
+        if self.out_scalar:
+            return self.out_scalar.inverse_transform(predicts, 0)
         else:
             return predicts
 
@@ -49,13 +52,15 @@ class TrainerBase(object):
                  loss: nn.Module,
                  device: torch.device,
                  optimizer,
-                 scalar: ZScoreScaler,
+                 in_scalar: ZScoreScaler,
+                 out_scalar: ZScoreScaler,
                  max_grad_norm: Optional[float]):
+        self.in_scalar = in_scalar
+        self.out_scalar = out_scalar
         self.model = model.to(device)
         self.loss = loss.to(device)
         self.optimizer = optimizer
         self.clip = max_grad_norm
-        self.scalar = scalar
         self.device = device
 
     @train_wrapper
@@ -113,8 +118,7 @@ class BJDCRNNTrainer(TrainerBase):
         self.optimizer.zero_grad()
 
         attr, states, net = inputs
-        predicts = self.model(attr.to(self.device), states.to(self.device), net.to(self.device),
-                              targets.to(self.device), self.batch_seen)
+        predicts = self.model(states.to(self.device), net.to(self.device), self.batch_seen, targets.to(self.device))
 
         loss = self.loss(predicts, targets.to(self.device))
         loss.backward()
@@ -128,4 +132,29 @@ class BJDCRNNTrainer(TrainerBase):
         self.model.eval()
 
         attr, states, net = inputs
-        return self.model(attr.to(self.device), states.to(self.device), net.to(self.device))
+        return self.model(states.to(self.device), net.to(self.device), self.batch_seen)
+
+
+class BJSTGCNTrainer(TrainerBase):
+
+    @train_wrapper
+    def train(self, inputs, targets):
+        self.model.train()
+        self.optimizer.zero_grad()
+
+        attr, states, net = inputs
+        predicts = self.model(None, states.to(self.device), net.to(self.device), targets.to(self.device))
+
+        loss = self.loss(predicts, targets.to(self.device))
+        loss.backward()
+        if self.clip is not None:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+        self.optimizer.step()
+        return predicts
+
+    @predict_wrapper
+    def predict(self, inputs):
+        self.model.eval()
+
+        attr, states, net = inputs
+        return self.model(None, states.to(self.device), net.to(self.device))

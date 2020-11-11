@@ -1,23 +1,21 @@
 import numpy as np
 
 
-def evaluate(predictions: np.ndarray, targets: np.ndarray):
+def evaluate(preds: np.ndarray, trgts: np.ndarray):
     """
     evaluate model performance
-    :param predictions: [n_nodes, 12, n_features]
-    :param targets: np.ndarray, shape [n_nodes, 12, n_features]
+    :param preds: [n_nodes, 12, n_features]
+    :param trgts: np.ndarray, shape [n_nodes, 12, n_features]
     :return: a dict [str -> float]
     """
-    return {
-        'speed/mae': masked_mae_np(predictions[..., 0], targets[..., 0], null_val=0.0),
-        'speed/rmse': masked_rmse_np(predictions[..., 0], targets[..., 0], null_val=0.0),
-        'speed/mape': masked_mape_np(predictions[..., 0], targets[..., 0], null_val=0.0),
-        'available/mae': masked_mae_np(predictions[..., 1], targets[..., 1], null_val=0.0),
-        'available/rmse': masked_rmse_np(predictions[..., 1], targets[..., 1], null_val=0.0),
-        'available/mape': masked_mape_np(predictions[..., 1], targets[..., 1], null_val=0.0),
-        'loss': masked_mae_np(predictions[..., 1], targets[..., 1], null_val=0.0) +
-                masked_mae_np(predictions[..., 0], targets[..., 0], null_val=0.0)
-    }
+    res = {'loss': masked_mae_np(preds, trgts, null_val=0.0)}
+    maes, rmses, mapes = dict(), dict(), dict()
+    for horizon in range(12):
+        maes.update({horizon: masked_mae_np(preds[:, horizon], trgts[:, horizon], null_val=0.0)})
+        rmses.update({horizon: masked_rmse_np(preds[:, horizon], trgts[:, horizon], null_val=0.0)})
+        mapes.update({horizon: masked_mape_np(preds[:, horizon], trgts[:, horizon], null_val=0.0)})
+    res.update(mae=maes, rmse=rmses, mape=mapes)
+    return res
 
 
 def masked_rmse_np(preds, labels, null_val=np.nan):

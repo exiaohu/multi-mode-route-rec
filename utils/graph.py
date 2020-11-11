@@ -16,4 +16,4 @@ def graph_partition(g: nx.DiGraph, n_part: int):
     for node, member in zip(nodes, membership):
         partitions[member].add(node)
 
-    return partitions
+    return list(map(sorted, partitions)), {node: member for node, member in zip(nodes, membership)}
