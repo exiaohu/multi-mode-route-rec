@@ -14,6 +14,7 @@ Number = Union[float, int]
 def timing(f):
     def wrap(*args, **kwargs):
         since = time.perf_counter()
+        print(f'{f.__name__:s} function started.')
         ret = f(*args, **kwargs)
         print(f'{f.__name__:s} function took {time.perf_counter() - since:.3f} s')
 

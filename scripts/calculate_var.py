@@ -73,14 +73,16 @@ def eval_var(data, n_lags=3):
 
 
 if __name__ == '__main__':
+    fill_with_mean = False
     ds = BJSpeedDataset('train')
     roads, road_net, id_to_ts = ds._states, ds._net, sorted(ds._id_to_ts.values())
 
-    # roads[roads == 0.] = np.nan
-    # fillva = ma.array(roads, mask=np.isnan(roads)).mean(axis=1)
-    # n, d = fillva.shape
-    # fillva = np.reshape(fillva, (n, 1, d))
-    # roads = np.where(np.isnan(roads), fillva, roads)
+    if fill_with_mean:
+        roads[roads == 0.] = np.nan
+        fillva = ma.array(roads, mask=np.isnan(roads)).mean(axis=1)
+        n, d = fillva.shape
+        fillva = np.reshape(fillva, (n, 1, d))
+        roads = np.where(np.isnan(roads), fillva, roads)
     results = dict()
     for n_lags in [1]:
         print('*' * 100, 'speed', '*' * 100)
