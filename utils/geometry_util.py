@@ -1,11 +1,11 @@
-from shapely.geometry import Point, LineString, MultiLineString
 from typing import Union
+
+from pyproj import Transformer, CRS
+from shapely.geometry import Point, LineString, MultiLineString
+from shapely.ops import transform
 
 
 def transform_coordinate_system(geoms, source_cs='EPSG:4326', target_cs='EPSG:3857'):
-    from shapely.ops import transform
-    from pyproj import Transformer, CRS
-
     project = Transformer.from_crs(CRS(source_cs), CRS(target_cs), always_xy=True).transform
 
     if isinstance(geoms, (list, tuple)):

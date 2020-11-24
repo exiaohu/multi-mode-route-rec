@@ -1,150 +1,119 @@
 import json
-
+import pickle
 from datetime import datetime
+
+import numpy as np
 from flask import Flask, jsonify, request
 from shapely.geometry import Point, Polygon
 
-app = Flask(__name__)
+from utils.multi_modal import get_edges_by_modals, GeneralNode
 
-default_res = {
-    'plans': [
-        {
-            'summary': {
-                'descriptions': "途径：学院路 > 四环 > 北湖渠路",
-                'costs': {
-                    'distance': 13.0,
-                    'time': 22,
-                    'price': 22.0,
-                    'transfer_time': 0,
-                }
-            },
-            'path': [
-                {
-                    'type': 'bus',
-                    'path': {
-                        "coordinates": [
-                            [116.34924069326846, 39.93912181555644],
-                            [116.33897282483227, 39.965277426042334],
-                            [116.3338043267136, 39.97515081171022],
-                            [116.33158933111197, 39.99157237586751],
-                            [116.31407490649673, 40.031716819809645],
-                            [116.30868937119958, 40.039809159854634],
-                            [116.30020270159802, 40.05176697606433],
-                            [116.31330779662255, 40.06959112466942],
-                            [116.32995722135033, 40.0694775923388],
-                            [116.35407407457015, 40.070490516946336],
-                            [116.40608847994501, 40.05162199849808],
-                            [116.42827787555503, 40.04160203389973],
-                            [116.44367982820653, 39.99435394529868],
-                            [116.42968443491644, 39.976245639366674],
-                            [116.42552641548052, 39.96694236069532],
-                            [116.42649607565718, 39.95676377950603],
-                            [116.42961691720929, 39.940236985677544]
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            'summary': {
-                'descriptions': "途径：西土城路 > 三环 > 京承高速",
-                'costs': {
-                    'distance': 17.4,
-                    'time': 23,
-                    'price': 27.0,
-                    'transfer_time': 3,
-                }
-            },
-            'path': [
-                {
-                    'type': 'bus',
-                    'path': {
-                        "coordinates": [
-                            [116.609772885186104, 40.051608746591413],
-                            [116.587001294037648, 40.078261971791562],
-                            [116.450815058924675, 39.960153052596297],
-                            [116.429616917209287, 39.940236985677544]
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            'summary': {
-                'descriptions': "途径：四环 > 北辰东路 > 科荟路",
-                'costs': {
-                    'distance': 13.5,
-                    'time': 24,
-                    'price': 23.0,
-                    'transfer_time': 5,
-                }
-            },
-            'path': [
-                {
-                    'type': 'bus',
-                    'path': {
-                        "coordinates": [
-                            [116.422144675270616, 39.844456779879081],
-                            [116.442176865028841, 39.832851791547633],
-                            [116.453067064200951, 39.82660729452369],
-                            [116.454637104286718, 39.805571223582653],
-                            [116.474218011298689, 39.801721012573516],
-                            [116.484579879343428, 39.805628894409359],
-                            [116.499407270113565, 39.80175410813851],
-                            [116.507356575218338, 39.791996671065299],
-                            [116.5157559767771, 39.781665255049901],
-                            [116.53403261326784, 39.771846093792419],
-                            [116.556511228112768, 39.782605047745513],
-                            [116.57557650663901, 39.794075514172114],
-                            [116.585728200740419, 39.802464451567836],
-                            [116.596139600866678, 39.811573756732713]
-                        ]
-                    }
-                }
-            ]
-        }
-    ]
-}
+app = Flask(__name__)
 
 MAX_LNG, MIN_LNG = 116.495, 116.265
 MAX_LAT, MIN_LAT = 39.995, 39.820
 
 vld_area = Polygon(((MAX_LNG, MAX_LAT), (MAX_LNG, MIN_LAT), (MIN_LNG, MIN_LAT), (MIN_LNG, MAX_LAT), (MAX_LNG, MAX_LAT)))
+vld_modals = ('walking', 'driving', 'taxi', 'public')
+vld_pref = ('default', 'distance', 'time', 'price', 'transfer_time')
 
 
-def error(msg='Some error.'):
-    return jsonify({'success': False, 'message': msg})
+def get_dynamic_info():
+    di = pickle.load(open('data/dynamic/dynamic_road_net.pickle', 'rb'))
+    di['timestamps'] = di.timestamps.astype(np.int64)
+
+    mv = di.speed.mean()
+    iv = min(a - b for a, b in zip(sorted(set(di.timestamps))[1:], sorted(set(di.timestamps))[:-1]))
+    return di.set_index(['part_id', 'timestamps']), mv, iv
+
+
+dynamic_info, missing_value, interval = get_dynamic_info()
+partitions = pickle.load(open('data/partitions.pickle', 'rb'))
+
+
+def error(msg='Some error happened.'):
+    return jsonify({'success': True, 'errorMessage': msg})
 
 
 def ok(data=None):
     return jsonify({'success': True, 'data': data})
 
 
-@app.route('/api/routing')
-def routing():
-    args = request.args
+def check_params(args):
+    assert 'origin_location' in args.keys() and 'dest_location' in args.keys(), f'No origin or destination specified.'
 
     origin = Point(json.loads(args['origin_location'])['lng'], json.loads(args['origin_location'])['lat'])
     dest = Point(json.loads(args['dest_location'])['lng'], json.loads(args['dest_location'])['lat'])
+    assert vld_area.contains(origin) and vld_area.contains(dest), \
+        f'Origin ({origin}) or dest ({dest}) is not inside {vld_area}'
 
-    assert vld_area.contains(origin) and vld_area.contains(dest)
-
-    modals = args.getlist('modals') or ['walking', 'driving', 'taxi', 'public']
-
-    assert len({'walking', 'driving', 'taxi', 'public'}.union(modals)) == 4
+    modals = args.getlist('modals') or vld_modals
+    assert len(set(modals).difference(vld_modals)) == 0, f'Modals {modals} is not a subset of {vld_modals}'
 
     timestamp = datetime.fromtimestamp(int(args['timestamp'])) if 'timestamp' in args.keys() else datetime.now()
+    timestamp = timestamp.replace(2018, 8)  # mapping the current time to Aug, 2018
 
     pref = args.get('preference', 'default')
-
-    assert pref in ('default', 'distance', 'time', 'price', 'transfer_time')
+    assert pref in vld_pref, f'Preference must one of {vld_pref}'
 
     total = args.get('total', default=3, type=int)
 
-    print(*locals().values(), sep='\n')
+    return origin, dest, get_edges_by_modals(modals), timestamp.timestamp(), pref, total
 
-    return ok(default_res)
+
+def gen_plans(cost, _path):
+    assert cost < float('inf'), f'无法找到有效路线。'
+
+    summary, path = dict(descriptions='', costs=dict(distance=0, time=0, price=0, transfer_time=0)), list()
+    cur = dict(type=None, path=dict(coordinates=list()))
+
+    for n, t in _path:
+        if cur['type'] is None:
+            cur['type'] = n.modal
+
+        if cur['type'] == n.modal:
+            cur['path']['coordinates'].append(n.point)
+        else:
+            path.append(cur)
+            cur = dict(type=n.modal, path=dict(coordinates=[n.point]))
+
+    if cur['type'] is not None:
+        path.append(cur)
+
+    return dict(summary=summary, path=path)
+
+
+def dynamic_weight(attr, ts):
+    try:
+        return float(attr['time'])
+    except ValueError:
+        assert attr['time'] == 'dynamic'
+
+        rid, rl = int(attr['id']), float(attr['distance'])
+        try:
+            speed = dynamic_info.loc[partitions[rid], ts // interval * interval].speed
+        except KeyError:
+            speed = missing_value
+
+        return rl / speed * 3.6
+
+
+@app.route('/api/routing', methods=['GET'])
+def routing():
+    try:
+        org, dst, edges, timestamp, pref, total = check_params(request.args)
+    except AssertionError as e:
+        return error(e.args[0] if len(e.args) > 0 else None)
+
+    onode, dnode = GeneralNode('walk', (org.x, org.y), None, None), GeneralNode('walk', (dst.x, dst.y), None, None)
+    o, d = edges.nearest_node(org), edges.nearest_node(dst)
+    paths = edges.k_shortest_path(o, d, timestamp, k=total, weight=lambda attr, ts: float(attr['time']))
+
+    try:
+        return ok(dict(plans=[gen_plans(cost, ((onode, None),) + path + ((dnode, None),)) for cost, path in paths]))
+    except AssertionError as e:
+        return error(e.args[0] if len(e.args) > 0 else None)
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port='2500')
+    app.run(host='0.0.0.0', port='2500', debug=True)

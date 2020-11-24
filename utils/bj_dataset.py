@@ -19,6 +19,8 @@ def get_datasets(*args, **kwargs):
 
 
 class BJSpeedDataset(Dataset):
+    _sequence = None
+    ratio = None
     class_inited = False
 
     def __init__(self, phase: str, *args, **kwargs):
@@ -32,7 +34,7 @@ class BJSpeedDataset(Dataset):
     def init_class(
             cls,
             road_states_path: str = 'data/roads-20180801-20180831.parquet',
-            road_net_path: str = 'data/roads/bj_roads.shp',
+            road_net_path: str = 'data/roads/wgs_bj_roads.shp',
             ratio: Tuple[Number, Number, Number] = (6, 2, 2),
             n_hist: int = 12,
             n_pred: int = 12,

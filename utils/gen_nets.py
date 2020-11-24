@@ -16,7 +16,7 @@ from .helper import timing
 
 GeneralNode = namedtuple('GeneralNode', ['modal', 'point', 'name', 'line'])
 
-__all__ = ['GeneralNode', 'get_bus', 'get_subway', 'get_road']
+__all__ = ['GeneralNode', 'get_bus', 'get_subway', 'get_road', 'get_multi_modal']
 
 
 def get_real_distance(pt1: Point, pt2: Point, line: MultiLineString, crs) -> float:
@@ -196,7 +196,7 @@ def _road(road='data/beijing_geo/wgs_roadnet.geojson'):
     road['snodeid'] = pd.to_numeric(road.snodeid)
     road['enodeid'] = pd.to_numeric(road.enodeid)
     road['length'] = pd.to_numeric(road['length'])
-    road['l'] = road.to_crs('EPSG:3857').length
+    road['l'] = road.to_crs(epsg=3857).length
     road['speedclass'] = pd.to_numeric(road.speedclass)
     road['lanenum'] = pd.to_numeric(road.lanenum)
 
@@ -240,7 +240,7 @@ def _road(road='data/beijing_geo/wgs_roadnet.geojson'):
 
             switch_edge = {
                 'distance': 0,
-                'time': 0,
+                'time': 5,
                 'price': 0,
                 'transfer_time': 1,
             }
@@ -262,7 +262,45 @@ def get_road(saved='data/multi-net/road.gpickle'):
         return net
 
 
+@timing
+def _combine_nets(*nets: nx.DiGraph):
+    net = nx.compose_all(nets)
+
+    ns = [list(this.nodes) for this in nets]
+    cs = [list(map(lambda it: (it.x, it.y), map(lambda it: transform(Point(it.point)), n))) for n in ns]
+
+    for (t, tn, tc), (o, on, oc) in tqdm(combinations(zip(nets, ns, cs), 2)):
+        bkdtree, skdtree = KDTree(tc), KDTree(oc)
+        for i, js in tqdm(enumerate(bkdtree.query_ball_tree(skdtree, 500))):  # any pair of nodes within 500 meters
+            for j in js:
+                if tn[i].modal != on[j].modal:
+                    ix, iy = tc[i]
+                    jx, jy = oc[j]
+                    dist = ((ix - jx) ** 2 + (iy - jy) ** 2) ** .5
+                    net.add_edge(tn[i], on[j], **{
+                        'distance': dist,
+                        'time': 5,
+                        'price': 0,
+                        'transfer_time': 1,
+                    })
+    return net
+
+
+def _multi_modal():
+    return _combine_nets(get_bus(), get_subway(), get_road())
+
+
+def get_multi_modal(saved='data/multi-net/multi-modal.gpickle'):
+    if os.path.exists(saved) and os.path.isfile(saved):
+        return nx.read_gpickle(saved)
+    else:
+        net = _multi_modal()
+        nx.write_gpickle(net, saved)
+        return net
+
+
 if __name__ == '__main__':
-    get_bus()
-    get_subway()
-    get_road()
+    print('generate multi-modal graph')
+    saved = 'data/multi-net/multi-modal.gpickle'
+    nx.write_gpickle(_multi_modal(), saved)
+    print('multi-modal graph saved at', saved)

@@ -3,8 +3,9 @@ import torch
 from models import *
 from utils.bj_dataset import bj_collate_fn, get_datasets
 from utils.data import get_dataloaders, ZScoreScaler
+from utils.helper import get_optimizer
 from utils.loss import get_loss
-from utils.train import train_model, get_optimizer, test_model
+from utils.train import train_model, test_model
 from utils.trainers import *
 
 

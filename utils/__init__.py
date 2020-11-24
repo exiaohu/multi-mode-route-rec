@@ -1,9 +1,6 @@
 import math
 
 from .hexagon import Layout, layout_pointy, Point, pixel_to_hex, hex_round
-from .routing import EdgesLookup
-
-time_dependent_dijkstra = EdgesLookup.time_dependent_dijkstra
 
 hexagon2id_lookup = dict()
 id2hexagon_lookup = dict()
