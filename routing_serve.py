@@ -1,6 +1,7 @@
 import json
 import pickle
 from datetime import datetime
+from itertools import chain
 
 import numpy as np
 from flask import Flask, jsonify, request
@@ -61,21 +62,41 @@ def check_params(args):
     return origin, dest, get_edges_by_modals(modals), timestamp.timestamp(), pref, total
 
 
-def gen_plans(cost, _path):
+def gen_plans(cost, _path, edges):
     assert cost < float('inf'), f'无法找到有效路线。'
 
-    summary, path = dict(descriptions='', costs=dict(distance=0, time=0, price=0, transfer_time=0)), list()
+    summary, path = dict(descriptions='无描述。', costs=dict(distance=0, time=0, price=0, transfer_time=0)), list()
     cur = dict(type=None, path=dict(coordinates=list()))
 
+    prev_node = None
     for n, t in _path:
         if cur['type'] is None:
             cur['type'] = n.modal
 
         if cur['type'] == n.modal:
-            cur['path']['coordinates'].append(n.point)
+            try:
+                if prev_node is not None:
+                    line = edges.get_attr(prev_node, n, dict())['geometry']
+                    cur['path']['coordinates'].extend(
+                        list(chain(*([coord for coord in geom.coords] for geom in line.geoms)))[1:])
+                else:
+                    cur['path']['coordinates'].append(n.point)
+            except KeyError:
+                cur['path']['coordinates'].append(n.point)
         else:
             path.append(cur)
             cur = dict(type=n.modal, path=dict(coordinates=[n.point]))
+
+        prev_node = n
+
+    def get_attr(n1, n2, ts):
+        attr = edges.get_attr(n1, n2, {'distance': 0, 'time': 0, 'price': 0, 'transfer_time': 0})
+        if attr['time'] == 'dynamic':
+            attr['time'] = edges.weight(attr, ts)
+        return float(attr['distance']), float(attr['time']), float(attr['price']), float(attr['transfer_time'])
+
+    dists, times, prices, trans = zip(*(get_attr(n1, n2, ts) for (n1, ts), (n2, _) in zip(_path[:-1], _path[1:])))
+    summary['costs'].update(distance=sum(dists) / 1000, time=sum(times), price=sum(prices), transfer_time=sum(trans))
 
     if cur['type'] is not None:
         path.append(cur)
@@ -105,12 +126,12 @@ def routing():
     except AssertionError as e:
         return error(e.args[0] if len(e.args) > 0 else None)
 
-    onode, dnode = GeneralNode('walk', (org.x, org.y), None, None), GeneralNode('walk', (dst.x, dst.y), None, None)
+    ond, dnd = GeneralNode('walk', (org.x, org.y), None, None), GeneralNode('walk', (dst.x, dst.y), None, None)
     o, d = edges.nearest_node(org), edges.nearest_node(dst)
     paths = edges.k_shortest_path(o, d, timestamp, k=total, weight=lambda attr, ts: float(attr['time']))
 
     try:
-        return ok(dict(plans=[gen_plans(cost, ((onode, None),) + path + ((dnode, None),)) for cost, path in paths]))
+        return ok(dict(plans=[gen_plans(cost, ((ond, None),) + pth + ((dnd, None),), edges) for cost, pth in paths]))
     except AssertionError as e:
         return error(e.args[0] if len(e.args) > 0 else None)
 

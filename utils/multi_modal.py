@@ -65,7 +65,14 @@ def public() -> EdgesLookup:
     return EdgesLookup([(o, d, net.edges[(o, d)]) for o, d in net.edges], None)
 
 
+@for_modals(['walking', 'driving', 'taxi' 'public'])
+def all_combined() -> EdgesLookup:
+    net = get_multi_modal()
+    return EdgesLookup([(o, d, net.edges[(o, d)]) for o, d in net.edges], None)
+
+
 walking()
 # driving()
 # taxi()
 # public()
+# all_combined()

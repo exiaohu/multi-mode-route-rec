@@ -14,9 +14,9 @@ from tqdm import tqdm
 from .geometry_util import distance_btw_two_points_on_a_line, transform_coordinate_system as transform
 from .helper import timing
 
-GeneralNode = namedtuple('GeneralNode', ['modal', 'point', 'name', 'line'])
-
 __all__ = ['GeneralNode', 'get_bus', 'get_subway', 'get_road', 'get_multi_modal']
+
+GeneralNode = namedtuple('GeneralNode', ['modal', 'point', 'name', 'line'])
 
 
 def get_real_distance(pt1: Point, pt2: Point, line: MultiLineString, crs) -> float:

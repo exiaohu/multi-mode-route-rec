@@ -18,6 +18,8 @@ class EdgesLookup:
         :param edges: iterable of tuple as (`source node`, `target node`, `attribute(s)`)
         :param weight: function, given attribute(s) and a timestamp, it calculates a time-dependent cost.
         """
+        edge_dict = {(fro, to): attr for fro, to, attr in edges}
+
         lookup, nodes = defaultdict(list), set()
         for s, t, a in edges:
             lookup[s].append((a, t))
@@ -33,6 +35,8 @@ class EdgesLookup:
 
         self.nodes = nodes
         self.nodes_kdtree = kdtree
+
+        self.edge_dict = edge_dict
 
     def nearest_node(self, p):
         d, i = self.nodes_kdtree.query(p)
@@ -69,6 +73,9 @@ class EdgesLookup:
 
         return res
 
+    def get_attr(self, fro, to, default):
+        return self.edge_dict.get((fro, to), default)
+
     def _time_dependent_dijkstra(self, f, t, ts):
         # dist records the min value of each node in heap.
         q, seen, dist = [(0, f, (), ts)], set(), {f: 0}
@@ -96,7 +103,8 @@ class EdgesLookup:
 
         paths, potential_paths = [(cost, path)], list()
 
-        if not path: return paths
+        if not path:
+            return paths
 
         for k in range(1, k):
             prev_pth = paths[-1][1]
@@ -122,7 +130,7 @@ class EdgesLookup:
                 self.masked_edges = set()
 
             if len(potential_paths):
-                potential_paths = sorted(potential_paths, key=lambda i: i[0])
+                potential_paths = sorted(potential_paths, key=lambda _i: _i[0])
                 paths.append(potential_paths[0])
                 potential_paths.pop(0)
             else:
