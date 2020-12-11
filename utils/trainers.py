@@ -4,7 +4,7 @@ from torch import nn
 from typing import Optional
 
 from .data import ZScoreScaler
-from .train import set_device_recursive
+from .helper import set_device_recursive
 
 __all__ = ['BJTrainer', 'BJDCRNNTrainer', 'BJSTGCNTrainer']
 

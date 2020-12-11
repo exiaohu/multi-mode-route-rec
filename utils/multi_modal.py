@@ -61,6 +61,7 @@ def taxi() -> EdgesLookup:
 @for_modals(['walking', 'public'])
 def public() -> EdgesLookup:
     net = get_multi_modal()
+    print('Multi modal net retrived.')
     net = net.subgraph(filter(lambda n: n.modal in ('walk', 'bus', 'subway'), net.nodes))
     return EdgesLookup([(o, d, net.edges[(o, d)]) for o, d in net.edges], None)
 

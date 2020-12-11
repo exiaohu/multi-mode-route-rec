@@ -95,8 +95,13 @@ def train_model(
 
             writer.add_scalars('Loss', loss_dict, global_step=epoch)
             for metric in running_metrics['train'].keys():
-                for phase in phases:
-                    writer.add_scalars(f'{metric}', {f'{phase}': running_metrics[phase][metric]}, global_step=epoch)
+                for horizon in running_metrics['train'][metric].keys():
+                    for phase in phases:
+                        writer.add_scalars(
+                            f'{metric}/{horizon}',
+                            {f'{phase}': running_metrics[phase][metric][horizon]},
+                            global_step=epoch
+                        )
     except (ValueError, KeyboardInterrupt) as e:
         print(e)
     finally:

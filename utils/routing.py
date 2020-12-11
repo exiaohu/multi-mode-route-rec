@@ -5,6 +5,7 @@ from heapq import heappop, heappush
 from typing import List, Tuple, Any
 
 from scipy.spatial import KDTree
+from tqdm import tqdm
 
 from .gen_nets import GeneralNode
 
@@ -21,13 +22,13 @@ class EdgesLookup:
         edge_dict = {(fro, to): attr for fro, to, attr in edges}
 
         lookup, nodes = defaultdict(list), set()
-        for s, t, a in edges:
+        for s, t, a in tqdm(edges, 'lookup constructing'):
             lookup[s].append((a, t))
             nodes.add(s)
             nodes.add(t)
 
         nodes = list(nodes)
-        kdtree = KDTree(list(map(lambda it: it.point, nodes)))
+        kdtree = KDTree(list(tqdm(map(lambda it: it.point, nodes), 'kdtree constructing')))
 
         self.weight = weight
         self.lookup = lookup

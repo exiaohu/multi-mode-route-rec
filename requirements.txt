@@ -1,6 +1,5 @@
 numpy
 pandas
-torch
 networkx
 PyMetis
 tensorboardX
@@ -14,4 +13,5 @@ flask
 pyproj
 matplotlib
 seaborn
-dgl
+# conda install -c dglteam dgl
+# conda install pytorch torchvision torchaudio cpuonly -c pytorch
