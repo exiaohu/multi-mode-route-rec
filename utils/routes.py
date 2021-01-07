@@ -329,6 +329,10 @@ class RoutePlanner:
     BUS_SPEED = 30 * 1000 / 3600  # 假定公交速度30公里每小时
     WALK_SPEED = 10 * 1000 / 3600  # 步行速度10公里每小时
 
+    INFO_SUCCESS = 'success'
+    INFO_UNREACH = 'error: not reachable.'
+    INFO_TOO_CLOSE = 'error: origin and destination are too close.'
+
     def __init__(
             self,
             subway_path='data/shentie.json',
@@ -357,7 +361,7 @@ class RoutePlanner:
         org_nnr = self.road_net.nearest_node(org, 3)
         dst_nnr = self.road_net.nearest_node(dst, 3)
         if len(set(org_nnr).union(dst_nnr)) < len(org_nnr) + len(dst_nnr):
-            return RoutingResult('error: origin and destination are too close.', org, dst, timestamp, [])
+            return RoutingResult(self.INFO_TOO_CLOSE, org, dst, timestamp, [])
 
         car_plans = list()
         for fro, to in product(org_nnr, dst_nnr):
@@ -385,15 +389,14 @@ class RoutePlanner:
                 pass
         if len(car_plans) > 0:
             car_plans = sorted(car_plans, key=lambda item: item.time)[:total]
-            res = RoutingResult('success', org, dst, timestamp, car_plans)
+            res = RoutingResult(self.INFO_SUCCESS, org, dst, timestamp, car_plans)
         else:
-            return RoutingResult('error: not reachable.', org, dst, timestamp, [])
+            return RoutingResult(self.INFO_UNREACH, org, dst, timestamp, [])
 
         return res
 
     @staticmethod
-    def __find_plans(net, get_price, link_speed, walk_speed, org, dst, timestamp, total=3):
-
+    def __get_plan(net, org, fro, to, dst, timestamp, get_price, link_speed, walk_speed):
         def clean_path(p):
             cur_route, ps = 'transit', list()
             for u, v in zip(p[:-1], p[1:]):
@@ -408,43 +411,48 @@ class RoutePlanner:
 
             return ps
 
+        paths = clean_path(net.shortest_path(fro, to, timestamp))
+        tdis = sum(net.graph[u][v]['length'] for path in paths for u, v in zip(path[:-1], path[1:]))
+        wdis = sum(realdis(*up[-1].xy, *vp[0].xy) for up, vp in zip(paths[:-1], paths[1:]))
+        wdis += realdis(*org, *paths[0][0].xy) + realdis(*dst, *paths[-1][-1].xy)
+        price = sum(get_price(net.graph[path[0]][path[1]]['route']) for path in paths)
+        segments = list()
+        for path in paths:
+            segment = [net.graph[path[0]][path[1]]['from']]
+            for u, v in zip(path[:-1], path[1:]):
+                segment.append(net.graph[u][v]['to'])
+            segments.append((net.graph[path[0]][path[1]]['route'], segment))
+
+        return RoutingPlan(
+            cost=price,
+            time=tdis / link_speed + wdis / walk_speed,
+            distance=wdis + tdis,
+            walking_distance=wdis,
+            transit_distance=tdis,
+            taxi_distance=0,
+            path=[[n.xy for n in p] for p in paths],
+            segments=segments
+        )
+
+    @classmethod
+    def __find_plans(cls, net, get_price, link_speed, walk_speed, org, dst, timestamp, total=3):
+
         org_nnr = net.nearest_node(org, 3)
         dst_nnr = net.nearest_node(dst, 3)
         if len(set(org_nnr).union(dst_nnr)) < len(org_nnr) + len(dst_nnr):
-            return RoutingResult('error: origin and destination are too close.', org, dst, timestamp, [])
+            return RoutingResult(cls.INFO_TOO_CLOSE, org, dst, timestamp, [])
 
         plans = list()
         for fro, to in product(org_nnr, dst_nnr):
             try:
-                paths = clean_path(net.shortest_path(fro, to, timestamp))
-                tdis = sum(net.graph[u][v]['length'] for path in paths for u, v in zip(path[:-1], path[1:]))
-                wdis = sum(realdis(*up[-1].xy, *vp[0].xy) for up, vp in zip(paths[:-1], paths[1:]))
-                wdis += realdis(*org, *paths[0][0].xy) + realdis(*dst, *paths[-1][-1].xy)
-                price = sum(get_price(net.graph[path[0]][path[1]]['route']) for path in paths)
-                segments = list()
-                for path in paths:
-                    segment = [net.graph[path[0]][path[1]]['from']]
-                    for u, v in zip(path[:-1], path[1:]):
-                        segment.append(net.graph[u][v]['to'])
-                    segments.append((net.graph[path[0]][path[1]]['route'], segment))
-
-                plans.append(RoutingPlan(
-                    cost=price,
-                    time=tdis / link_speed + wdis / walk_speed,
-                    distance=wdis + tdis,
-                    walking_distance=wdis,
-                    transit_distance=tdis,
-                    taxi_distance=0,
-                    path=[[n.xy for n in p] for p in paths],
-                    segments=segments
-                ))
+                plans.append(cls.__get_plan(net, org, fro, to, dst, timestamp, get_price, link_speed, walk_speed))
             except nx.NetworkXNoPath:
                 pass
         if len(plans) > 0:
             plans = sorted(plans, key=lambda item: item.time)[:total]
-            res = RoutingResult('success', org, dst, timestamp, plans)
+            res = RoutingResult(cls.INFO_SUCCESS, org, dst, timestamp, plans)
         else:
-            return RoutingResult('error: not reachable.', org, dst, timestamp, [])
+            return RoutingResult(cls.INFO_UNREACH, org, dst, timestamp, [])
 
         return res
 
@@ -459,6 +467,40 @@ class RoutePlanner:
         net, get_price = self.subway, lambda ln: 6
 
         return self.__find_plans(net, get_price, self.SUBWAY_SPEED, self.WALK_SPEED, org, dst, timestamp, total)
+
+    def __call__(self, org, dst, timestamp, total=3):
+        # 考虑换乘模式：
+        #   单模式：公交、地铁、出租
+        #   双模式：公交+地铁、地铁+出租
+        #   三模式：公交+地铁+出租
+        res = self.find_car_plans(org, dst, timestamp, total)
+        if res.info != self.INFO_SUCCESS:
+            return res
+
+        res.plans.extend(self.find_bus_plans(org, dst, timestamp, total).plans)
+        res.plans.extend(self.find_subway_plans(org, dst, timestamp, total).plans)
+
+        subway_org, subway_dst = self.subway.nearest_node(org, 3), self.subway.nearest_node(dst, 3)
+        if len(set(subway_org).union(subway_dst)) < len(subway_org) + len(subway_dst):
+            return res
+
+        for so, sd in product(subway_org, subway_dst):
+            step0 = self.find_car_plans(org, so.xy, timestamp).plans + self.find_bus_plans(org, so.xy, timestamp).plans
+            time0 = sum(p.time for p in step0) / len(step0)
+
+            price_func, ss, ws = lambda ln: 6, self.SUBWAY_SPEED, self.WALK_SPEED
+            step1 = [self.__get_plan(self.subway, so.xy, so, sd, sd.xy, timestamp, price_func, ss, ws)]
+            time1 = step1[0].time
+
+            since = timestamp + time0 + time1
+            step2 = self.find_car_plans(sd.xy, dst, since).plans + self.find_bus_plans(sd.xy, dst, since).plans
+
+            res.plans.extend(product(step0, step1, step2))
+
+        _key = lambda pl: pl.time if isinstance(pl, RoutingPlan) else sum(p.time for p in pl)
+        res.plans = sorted(res.plans, key=_key)[:3]
+
+        return res
 
 
 def test(region, method):
@@ -476,11 +518,11 @@ def test(region, method):
 
 
 if __name__ == '__main__':
+    import time
+
     rp = RoutePlanner()
+    # plans = rp((114.23126585001434, 22.653067607112828), (114.1725139159855, 22.596286689331684), .0)
 
-    test(rp.shenzhen, rp.find_car_plans)
-    test(rp.shenzhen, rp.find_subway_plans)
-    test(rp.shenzhen, rp.find_bus_plans)
-
-    rp.find_bus_plans((114.23126585001434, 22.653067607112828),
-                      (114.1725139159855, 22.596286689331684), .0)
+    since = time.perf_counter()
+    [test(rp.shenzhen, rp) for _ in range(10000)]
+    print((time.perf_counter() - since) / 10000)
