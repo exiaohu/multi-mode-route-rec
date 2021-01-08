@@ -498,7 +498,7 @@ class RoutePlanner:
             res.plans.extend(product(step0, step1, step2))
 
         _key = lambda pl: pl.time if isinstance(pl, RoutingPlan) else sum(p.time for p in pl)
-        res.plans = sorted(res.plans, key=_key)[:3]
+        res.plans = sorted(res.plans, key=_key)[:total]
 
         return res
 
