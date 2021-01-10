@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import KDTree
 from shapely import wkt, ops
-from shapely.geometry import shape, Point
+from shapely.geometry import shape, Point, LineString
 
 from utils.geotool import realdis
 
@@ -310,18 +310,31 @@ def road_net(path, predict_speed=None):
 
     predict_speed = predict_speed or ha()
 
-    roads = gpd.read_file(path)[['link_id', 'length', 'road_name', 'geometry']]
+    roads = gpd.read_file(path)[['link_id', 'length', 'road_name', 'dir', 'geometry']]
     roads['fro'] = roads.apply(lambda r: TrafficNode(xy=r.geometry.coords[0], route=''), axis=1)
     roads['to'] = roads.apply(lambda r: TrafficNode(xy=r.geometry.coords[-1], route=''), axis=1)
 
-    return TrafficNetwork(nx.DiGraph([(r.fro, r.to, {
-        'link_id': r.link_id,
-        'from': r.fro.route,
-        'to': r.to.route,
-        'length': r.length,
-        'route': r.road_name,
-        'wkt': r.geometry
-    }) for r in roads.itertuples(False)]), lambda u, v, d, c: d['length'] / predict_speed(c, int(d['link_id'])) * 3.6)
+    edges = list()
+    for r in roads.itertuples(False):
+        edges.append((r.fro, r.to, {
+            'link_id': r.link_id,
+            'from': r.fro.route,
+            'to': r.to.route,
+            'length': r.length,
+            'route': r.road_name,
+            'wkt': r.geometry
+        }))
+        if r.dir == 0:
+            edges.append((r.to, r.fro, {
+                'link_id': r.link_id,
+                'from': r.to.route,
+                'to': r.fro.route,
+                'length': r.length,
+                'route': r.road_name,
+                'wkt': LineString(r.geometry.coords[::-1])
+            }))
+
+    return TrafficNetwork(nx.DiGraph(edges), lambda u, v, d, c: d['length'] / predict_speed(c, int(d['link_id'])) * 3.6)
 
 
 class RoutePlanner:
