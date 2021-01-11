@@ -298,7 +298,7 @@ def road_net(path, predict_speed=None):
             lsha = pickle.load(open(lsha_path, 'rb'))
         except OSError:
             print(f'WARNING: the link speed historical average values not exist at [{lsha_path}].')
-            return lambda t, r: 1.
+            return lambda _, __: 1.
 
         default = sum(lsha.values()) / len(lsha)
 
@@ -311,8 +311,8 @@ def road_net(path, predict_speed=None):
     predict_speed = predict_speed or ha()
 
     roads = gpd.read_file(path)[['link_id', 'length', 'road_name', 'dir', 'geometry']]
-    roads['fro'] = roads.apply(lambda r: TrafficNode(xy=r.geometry.coords[0], route=''), axis=1)
-    roads['to'] = roads.apply(lambda r: TrafficNode(xy=r.geometry.coords[-1], route=''), axis=1)
+    roads['fro'] = roads.apply(lambda _r: TrafficNode(xy=_r.geometry.coords[0], route=''), axis=1)
+    roads['to'] = roads.apply(lambda _r: TrafficNode(xy=_r.geometry.coords[-1], route=''), axis=1)
 
     edges = list()
     for r in roads.itertuples(False):
