@@ -19,8 +19,8 @@ parser.add_argument('--lr', type=float, default=1e-3, help='the learning rate.')
 parser.add_argument('--max_grad_norm', type=float, default=5, help='clips gradient norm of an iterable of parameters.')
 parser.add_argument('--epochs', type=int, default=100, help='the max number of epochs to train.')
 parser.add_argument('--early_stop_steps', type=int, default=10, help='steps to early stop.')
-parser.add_argument('--test', type=bool, action='store_true', default=False, help='toggle the test mode.')
-parser.add_argument('--resume', type=bool, action='store_true', default=False, help='if to resume a trained model.')
+parser.add_argument('--test', action='store_true', default=False, help='toggle the test mode.')
+parser.add_argument('--resume', action='store_true', default=False, help='if to resume a trained model.')
 
 args = parser.parse_args()
 
