@@ -175,6 +175,12 @@ def time_dependent_astar_path(graph, source: TrafficNode, target: TrafficNode,
 
 class TrafficNetwork:
     def __init__(self, graph: nx.Graph, weight_func=None, heuristic_func=None):
+        """
+        construct a traffic network for nearest neighbor and shortest path searching
+        :param graph:
+        :param weight_func:
+        :param heuristic_func:
+        """
         def dist(a, b, _=None, __=None):
             (x1, y1), (x2, y2) = a.xy, b.xy
 
