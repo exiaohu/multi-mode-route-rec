@@ -375,7 +375,7 @@ class RoutePlanner:
 
     def find_car_plans(self, org, dst, timestamp, total=3):
         self.check_params(org, dst, timestamp, total)
-        net = rp.road_net
+        net = self.road_net
 
         org_nnr = self.road_net.nearest_node(org, 3)
         dst_nnr = self.road_net.nearest_node(dst, 3)
