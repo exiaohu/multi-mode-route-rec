@@ -292,7 +292,7 @@ def bus(route_path, stop_path, route_stop_path):
     ), route2price
 
 
-def road_net(path, predict_speed=None):
+def road_net(path, predict_speed=None, **kwargs):
     def ha():
         """
         :return: a function takes exactly two positional arguments:
@@ -340,7 +340,11 @@ def road_net(path, predict_speed=None):
                 'wkt': LineString(r.geometry.coords[::-1])
             }))
 
-    return TrafficNetwork(nx.DiGraph(edges), lambda u, v, d, c: d['length'] / predict_speed(c, int(d['link_id'])) * 3.6)
+    return TrafficNetwork(
+        nx.DiGraph(edges),
+        lambda u, v, d, c: d['length'] / predict_speed(c, int(d['link_id'])) * 3.6,
+        **kwargs
+    )
 
 
 class RoutePlanner:

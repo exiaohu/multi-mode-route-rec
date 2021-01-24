@@ -13,5 +13,6 @@ flask
 pyproj
 matplotlib
 seaborn
+fastparquet
 # conda install -c dglteam dgl
 # conda install pytorch torchvision torchaudio cpuonly -c pytorch

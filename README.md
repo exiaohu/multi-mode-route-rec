@@ -1,6 +1,58 @@
 # 基于路段通行时间预测的多模态交通出行推荐
 A multi-mode route recommendation implementation based on travel time estimation on Python.
 
+## 目录结构
+
+- __multi\-mode\-route\-rec__: 根目录
+   - [README.md](README.md)
+   - __plot__:
+     - [ours.png](plot/ours.png): 模型*Torchviz*可视化
+   - [main.py](main.py): 模型的训练和测试，具体参数见文件内容
+   - __models__: 包括baseline在内的各模型代码
+     - [\_\_init\_\_.py](models/__init__.py)
+     - [dcrnn.py](models/dcrnn.py): as described in *DIFFUSION CONVOLUTIONAL RECURRENT NEURAL NETWORK: DATA-DRIVEN TRAFFIC FORECASTING*
+     - [graph\_wavenet.py](models/graph_wavenet.py): : as described in *Graph WaveNet for Deep Spatial-Temporal Graph Modeling*
+     - [lstm.py](models/lstm.py): 简单的LSTM模型
+     - [mlp.py](models/mlp.py): 简单的多层感知机
+     - [ours.py](models/ours.py): 本文中使用的模型
+     - [stgcn.py](models/stgcn.py): as described in *Spatio-Temporal Graph Convolutional Networks: A Deep Learning Framework for Traffic Forecasting*
+   - [requirements.txt](requirements.txt): Python环境需求说明
+   - [routing\_serve.py](routing_serve.py): 一个简单的基于Flask的Web服务，可以提供路由服务，目前基于北京数据集实现
+   - __scripts__: 数据处理的脚本，在大部分情况下可以忽略，功能如其名。
+     - [align\_road\_net.py](scripts/align_road_net.py): 处理北京路网数据
+     - [bj\_data\_praser.py](scripts/bj_data_praser.py): 从北京打点数据中提取轨迹
+     - [bj\_taxi\_data\_prepare.py](scripts/bj_taxi_data_prepare.py): 清洗北京打点数据
+     - [calculate\_historical\_average.py](scripts/calculate_historical_average.py): 计算历史平均值
+     - [calculate\_var.py](scripts/calculate_var.py): 计算VAR模型
+     - [draw\_poi\_demand\_pic.py](scripts/draw_poi_demand_pic.py): 绘制深圳的POI/交通需求相关性图片
+     - [fmm\_generator.sh](scripts/fmm_generator.sh): 运行 [Fast Map Matching]( https://github.com/cyang-kth/fmm )工具将北京打点数据匹配到路网
+     - [gen\_sz\_ha.py](scripts/gen_sz_ha.py): 计算深圳历史均值
+     - [generate\_bus.py](scripts/generate_bus.py): 从高德地图爬取并生成北京**公交**线路和站点数据
+     - [generate\_subway\_plans.py](scripts/generate_subway_plans.py): 从北京地铁官方服务生成**地铁**路线规划
+     - [generate\_subway\_plans\_sz.py](scripts/generate_subway_plans_sz.py): 从深圳地铁官方服务生成**地铁**路线规划
+     - [generate\_subways.py](scripts/generate_subways.py): 从高德地图爬取并生成北京**地铁**线路和站点数据
+     - [generate\_traj.py](scripts/generate_traj.py): 将北京出租车打点数据清理为shapefile文件
+     - [test.py](scripts/test.py): 深圳路线规划测试
+     - [unified\_evaluate.py](scripts/unified_evaluate.py): 北京各模型结果一次性生成
+   - __utils__
+     - [\_\_init\_\_.py](utils/__init__.py)
+     - [bj\_dataset.py](utils/bj_dataset.py): 北京数据处理，各**模型输入数据格式参考**
+     - [data.py](utils/data.py): 数据集和数据Loader，以及数据标准/归一化
+     - [evaluate.py](utils/evaluate.py): 模型评价方法
+     - [gen\_nets.py](utils/gen_nets.py): 生成北京各交通网络
+     - [geometry\_util.py](utils/geometry_util.py): 地理数据处理工具，主要功能为计算一条`LineString`上两个点之间的距离
+     - [geotool.py](utils/geotool.py): 各坐标系转换及相关工具
+     - [graph.py](utils/graph.py): 图分割
+     - [helper.py](utils/helper.py): 其它辅助工具函数
+     - [hexagon.py](utils/hexagon.py): 将地图分割为六边形网格所用到的工具函数
+     - [loss.py](utils/loss.py): 各损失函数定义
+     - [multi\_modal.py](utils/multi_modal.py): 生成北京多模态交通网络
+     - [routes.py](utils/routes.py): **深圳路线规划用到的主要文件**
+     - [routing.py](utils/routing.py): 北京路线规划的主要文件
+     - [train.py](utils/train.py): 模型训练的逻辑
+     - [trainers.py](utils/trainers.py): 模型训练器
+
+
 ## 环境配置(requirements)
 
 ### 必选
@@ -62,6 +114,9 @@ optional arguments:
 ```sh
 python main.py --save_folder myFolder --cuda cuda:0
 ```
+
+模型结构如图所示：
+![Ours](plot/ours.png)
 
 ### 模型测试
 
